@@ -265,6 +265,7 @@ class LidarCostmapNode(Node):
 
         # 直接处理本帧点云
         self.process_pointcloud(points, cloud_stamp, cloud_frame_id)
+        
     def xyz_array_to_pointcloud2(
         self,
         points: np.ndarray,

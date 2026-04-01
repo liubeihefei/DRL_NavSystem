@@ -18,8 +18,10 @@ class Nav2GPSNode(Node):
     """导航系统主节点，负责启动所有子节点"""
 
     def __init__(self):
+        # 初始化节点
         super().__init__('navigation_system')
 
+        # 写入日志
         self.get_logger().info('Navigation System started')
 
         # 生成统一的启动时间戳
@@ -40,6 +42,7 @@ class Nav2GPSNode(Node):
 
     def start_nodes(self):
         """启动所有子节点"""
+        # 获取配置文件中的参数
         config = get_config()
         is_test_mode = config.get('common.test_mode', False)
 
@@ -65,16 +68,8 @@ class Nav2GPSNode(Node):
         self.get_logger().info('Starting lidar_costmap_node...')
         from lidar_costmap_node import LidarCostmapNode
         self.lidar_costmap_node = LidarCostmapNode(log_dir=self.log_dir, log_timestamp=self.start_timestamp)
-
-        # self.get_logger().info('Starting lidar_360_fusion_node...')
-        # from lidar_360_fusion_node import Lidar360FusionNode
-        # self.lidar_360_fusion_node = Lidar360FusionNode()
-
-        # map_planner_node 包含地图管理和路径规划功能
-        self.get_logger().info('Starting map_planner_node...')
-        from map_planner_node import MapPlannerNode
-        self.map_planner_node = MapPlannerNode(log_dir=self.log_dir, log_timestamp=self.start_timestamp)
-
+        
+        # 由rl网络做局部控制的节点
         if not is_test_mode:
             self.get_logger().info('Starting controller_node...')
             from controller_node import ControllerNode
@@ -85,7 +80,7 @@ class Nav2GPSNode(Node):
     def destroy_all_nodes(self):
         """销毁所有子节点"""
         for attr in ('ekf_fusion_node', 'map_planner_node',
-                     'lidar_360_fusion_node', 'lidar_costmap_node', 'controller_node'):
+                     'lidar_costmap_node', 'controller_node'):
             node = getattr(self, attr, None)
             if node is not None:
                 try:
@@ -127,12 +122,9 @@ def main(args=None):
     config = get_config()
     is_test_mode = config.get('common.test_mode', False)
 
-    # executor.add_node(nav_node.odom_node)
-    # executor.add_node(nav_node.tf_publisher)
     executor.add_node(nav_node.ekf_fusion_node)
     executor.add_node(nav_node.map_planner_node)
     executor.add_node(nav_node.lidar_costmap_node)
-    # executor.add_node(nav_node.lidar_360_fusion_node)
 
     if not is_test_mode:
         executor.add_node(nav_node.controller_node)
