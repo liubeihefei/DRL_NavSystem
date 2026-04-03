@@ -540,7 +540,9 @@ class LidarCostmapNode(Node):
 
         # binned min：直接记录每个 bin 的最近距离，省掉排序步骤
         fine_min_distance = np.full(num_rays, self.scan_range, dtype=np.float32)
+        has_observation = np.zeros(num_rays, dtype=bool)
         for bin_idx, dist in zip(fine_indices, front_distances.astype(np.float32)):
+            has_observation[bin_idx] = True
             if dist < fine_min_distance[bin_idx]:
                 fine_min_distance[bin_idx] = dist
 
@@ -557,6 +559,13 @@ class LidarCostmapNode(Node):
                 selected_distances.append(bin_distances[min_idx])
 
         # 用细射线最近障碍距离生成 costmap
+        # 先将所有射线设为可通行 (0)，假设无障碍物
+        for ray_idx in range(num_rays):
+            grid_rows, grid_cols, cell_exit_r = self.ray_paths[ray_idx]
+            if len(cell_exit_r) > 0:
+                costmap[grid_rows, grid_cols] = 0
+
+        # 然后设置障碍物，覆盖可通行区域
         for ray_idx, d in zip(selected_bins, selected_distances):
             grid_rows, grid_cols, cell_exit_r = self.ray_paths[ray_idx]
 
@@ -567,18 +576,15 @@ class LidarCostmapNode(Node):
             obstacle_idx = int(np.searchsorted(cell_exit_r, d, side='left'))
 
             if obstacle_idx >= len(cell_exit_r):
-                # 障碍物不在范围内，跳过
+                # 障碍物超出射线范围，跳过（已设为可通行）
                 continue
 
-            # obstacle_idx 之前的格子设为空闲 (0)
-            if obstacle_idx > 0:
-                costmap[
-                    grid_rows[:obstacle_idx],
-                    grid_cols[:obstacle_idx]
-                ] = 0
-
-            # 障碍物所在格子设为障碍值，然后停止
+            # 障碍物所在格子设为障碍值
             costmap[grid_rows[obstacle_idx], grid_cols[obstacle_idx]] = self.costmap_value
+
+            # 障碍物后面的格子设为未知 (-1)，因为射线被阻挡
+            if obstacle_idx + 1 < len(grid_rows):
+                costmap[grid_rows[obstacle_idx + 1:], grid_cols[obstacle_idx + 1:]] = -1
 
         # 将细射线结果聚合成 bin_num 个 obs_min
         coarse_step_rad = math.pi / self.bin_num

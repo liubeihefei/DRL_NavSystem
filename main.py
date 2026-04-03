@@ -60,7 +60,7 @@ class Nav2GPSNode(Node):
         from ekf_fusion_node import EKFFusionNode
         self.ekf_fusion_node = EKFFusionNode(log_dir=self.log_dir, log_timestamp=self.start_timestamp)
 
-        # map_planner_node 包含地图管理和路径规划功能（已替代 map_node）
+        # # map_planner_node 包含地图管理和路径规划功能（已替代 map_node）
         self.get_logger().info('Starting map_planner_node...')
         from map_planner_node import MapPlannerNode
         self.map_planner_node = MapPlannerNode(log_dir=self.log_dir, log_timestamp=self.start_timestamp)

@@ -393,7 +393,8 @@ class ControllerNode(Node):
         # 2. distance, sin, cos
         with self.path_lock:
             if self.waypoints:
-                target = self.waypoints[0]
+                # target = self.waypoints[0]
+                target = self.waypoints[1]
                 target_x = target[0] if isinstance(target, (list, tuple)) else target['x']
                 target_y = target[1] if isinstance(target, (list, tuple)) else target['y']
 
@@ -424,6 +425,9 @@ class ControllerNode(Node):
         state_parts.append(np.array([self.last_action['v'], self.last_action['w']], dtype=np.float32))
 
         state = np.concatenate(state_parts)
+
+        # 记录模型原始输入
+        self.logger.info(f'Computed state: state={state}')
         return state
 
     def inference(self, state: np.ndarray) -> tuple:

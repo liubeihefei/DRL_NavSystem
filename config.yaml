@@ -40,7 +40,7 @@ ekf_fusion_node:
   # 当设为 true 时，机器人在启动时默认朝向正东，此时里程计 yaw=0 对应世界系 yaw=0
   # 当设为 false 时，使用 world_orientation_topic 提供世界系朝向
   # 该参数用于无法提供世界系朝向的情况，通过将里程计朝向当作世界系朝向来解决对齐问题
-  face_east_on_startup: true
+  face_east_on_startup: false
 
   # 日志配置
   log_enabled: true
@@ -63,7 +63,7 @@ lidar_costmap_node:
   scan_range: 7.0
 
   # 高度过滤 (米)
-  min_height: -0.1             # -0.35，最低高度
+  min_height: 0.1             # -0.35，最低高度
   max_height: 1.0              # 最高高度
 
   
@@ -78,7 +78,7 @@ lidar_costmap_node:
 
   # RL输入参数
   bin_num: 20                   # 前方180度的分区数量
-  ray_angle_step_deg: 2.0       # 射线角度间隔 (度)
+  ray_angle_step_deg: 1.0       # 射线角度间隔 (度)
 
   # 超时参数 (秒)
   cloud_timeout: 1.0            # 点云超时阈值
@@ -102,29 +102,29 @@ map_planner_node:
   # 膨胀参数
   # 膨胀形状为正方形，边长 = inflation_margin * 2（米）
   # 例如：inflation_margin=0.3，则膨胀正方形边长 = 0.6 米
-  inflation_margin: 0.2 #单位m
+  inflation_margin: 0.4 #单位m
 
   # 地图发布方式
   # true = 每次局部更新都发送完整 OccupancyGrid
   # false = 发送 OccupancyGridUpdate 增量更新
   publish_full_map: true
   
-  inflation_enabled: false 
+  inflation_enabled: true 
   # 超时参数
   map_pose_timeout: 1.0
   local_costmap_timeout: 0.3
 
   # 规划参数
-  max_distance_between: 3.0
+  max_distance_between: 4.0
   # 导航航点密集化参数：相邻航点之间的最大距离（米）
   # 如果两点间距离超过此值，将插入中间点
   # 设置为 0 可禁用密集化功能
   dense_nav_points_max_distance: 10.0
   allow_diagonal: false
-  arrival_threshold: 2.0
+  arrival_threshold: 7.0
   arrival_check_frequency: 10.0  # 航点到达检查频率 (Hz)
   obstacle_threshold: 50
-  planning_frequency: 5.0  # 路径规划频率 (Hz)，独立于地图更新
+  planning_frequency: 1.0  # 5.0，路径规划频率 (Hz)，独立于地图更新
 
   # 规划参数
 
@@ -183,7 +183,7 @@ controller_node:
 # ============================================================
 common:
   # 地图分辨率 (米/格) - map_node 和 lidar_costmap_node 共用
-  resolution: 0.2
+  resolution: 0.2  # 0.2
 
   # ============================================================
   # 测试模式配置

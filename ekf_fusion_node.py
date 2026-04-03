@@ -230,6 +230,10 @@ class EKFFusionNode(Node):
         period = 1.0 / max(self.frequency, 1e-3)
         self.timer = self.create_timer(period, self.fuse)
 
+        # 添加 TF 发布控制
+        self.last_tf_publish_stamp = 0.0  # 上次发布时的时间戳
+        self.tf_publish_interval_ns = int(0.05 * 1e9)  # 50ms = 20Hz
+
         # 主循环频率统计
         self.node_freq_stats = FrequencyStats(
             node_name='ekf_fusion_node',
@@ -929,6 +933,17 @@ class EKFFusionNode(Node):
         从 odom 回调接收到的位姿数据直接发布为 odom->base_link 的 TF 变换。
         时间戳使用 odom 消息的时间戳以保持一致性。
         """
+        # # 获取当前 odom 消息的时间戳（纳秒）
+        # current_stamp_ns = TimeUtils.stamp_to_nanos(stamp)
+        
+        # # 控制发布频率
+        # time_diff = current_stamp_ns - self.last_tf_publish_stamp
+        # if time_diff < self.tf_publish_interval_ns:
+        #     return
+        # # self.logger.info(f'time_diff={time_diff} ns, last_tf_publish_stamp={self.last_tf_publish_stamp}, current_stamp_ns={current_stamp_ns}')
+        # # 更新上次发布时间戳
+        # self.last_tf_publish_stamp = current_stamp_ns
+
         # 构建 TF 变换
         t = TransformStamped()
         t.header.stamp = stamp

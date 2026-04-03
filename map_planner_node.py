@@ -540,14 +540,15 @@ class MapPlannerNode(Node):
         Returns:
             最接近的 pose 数据，如果没有有效数据则返回 None
         """
-        if self.map_pose_queue is None:
+        map_pose_queue = self.map_pose_queue.copy()
+        if not map_pose_queue:
             return None
 
         # 查找时间差最小的 pose
         best_pose = None
         best_diff = float('inf')
 
-        for pose in self.map_pose_queue:
+        for pose in map_pose_queue:
             diff = abs(pose['timestamp'] - target_timestamp)
             if diff < best_diff:
                 best_diff = diff
