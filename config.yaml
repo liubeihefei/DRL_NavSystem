@@ -125,6 +125,10 @@ map_planner_node:
   arrival_check_frequency: 10.0  # 航点到达检查频率 (Hz)
   obstacle_threshold: 50
   planning_frequency: 1.0  # 5.0，路径规划频率 (Hz)，独立于地图更新
+  # A* 单次最大节点扩展数
+  # 超出时返回已找到的最优路径（或 None），防止碎片障碍物场景下长时间阻塞
+  # 参考：resolution=0.2m 时地图约 30万格子，200000 约覆盖 2/3 可达空间
+  max_astar_nodes: 200000
 
   # 规划参数
 

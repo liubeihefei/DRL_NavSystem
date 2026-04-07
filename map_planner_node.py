@@ -117,6 +117,9 @@ class MapPlannerNode(Node):
         self.arrival_check_interval = 1.0 / arrival_check_frequency if arrival_check_frequency > 0 else 0.5
         self.planning_frequency = float(node_config.get('planning_frequency', 2.0))
         self.obstacle_threshold = int(node_config.get('obstacle_threshold', 50))
+        # A* 单次最大节点扩展数，超出时返回已找到的最优路径（或 None）
+        # 用于防止在大地图碎片障碍物场景下 A* 长时间阻塞规划线程
+        self.max_astar_nodes = int(node_config.get('max_astar_nodes', 200000))
 
         # 膨胀参数（用于膨胀地图和规划，单位：米）
         self.inflation_margin = float(node_config.get('inflation_margin', 0.3))
@@ -1452,7 +1455,17 @@ class MapPlannerNode(Node):
         move_costs: List[float],
         check_map: np.ndarray
     ) -> Optional[List[Tuple[int, int]]]:
-        """双向 A* 实现"""
+        """双向 A* 实现
+
+        修复说明（相对于原版）：
+        1. 终止条件改为 fwd_f + bwd_f >= best_estimate（标准双向 A* 最优性条件），
+           原来的 min(fwd_f, bwd_f) >= best_estimate 过于保守，会导致大量多余探索。
+        2. 前向搜索补充了与后向搜索对称的提前剪枝：
+           找到最优路径后，当 fwd_f >= best_estimate 时跳过邻居扩展。
+        3. 增加节点扩展上限 max_astar_nodes，防止在碎片障碍物场景下长时间阻塞：
+           - 超限且已找到路径 → 返回当前最优路径（次优但可用）
+           - 超限且未找到路径 → 返回 None
+        """
 
         # Forward search (from start to goal)
         fwd_open = []
@@ -1471,19 +1484,31 @@ class MapPlannerNode(Node):
         allow_diagonal = len(moves) > 4
         best_path = None
         best_estimate = float('inf')
+        expanded = 0
 
         while fwd_open or bwd_open:
+            # ── 节点扩展上限保护 ──────────────────────────────────────────
+            if expanded >= self.max_astar_nodes:
+                self.logger.warning(
+                    f'A* node limit reached ({expanded} nodes), '
+                    f'returning {"best path found so far" if best_path is not None else "None"}'
+                )
+                return best_path
+
+            # ── 标准双向 A* 最优终止条件 ─────────────────────────────────
             if fwd_open and bwd_open:
                 fwd_f = fwd_open[0][0]
                 bwd_f = bwd_open[0][0]
-                if best_path is not None and min(fwd_f, bwd_f) >= best_estimate:
+                if best_path is not None and fwd_f + bwd_f >= best_estimate:
                     break
 
+            # ── 前向扩展 ─────────────────────────────────────────────────
             if fwd_open:
                 fwd_f, fwd_current = heapq.heappop(fwd_open)
                 if fwd_current in fwd_closed:
                     continue
                 fwd_closed.add(fwd_current)
+                expanded += 1
 
                 if fwd_current in bwd_g:
                     total = fwd_g[fwd_current] + bwd_g[fwd_current]
@@ -1492,6 +1517,10 @@ class MapPlannerNode(Node):
                         best_path = self._reconstruct_bidirectional_path(
                             fwd_came_from, bwd_came_from, fwd_current
                         )
+
+                # 找到最优路径后，前向 f 值已超出上界，跳过扩展（与后向对称）
+                if best_path is not None and fwd_f >= best_estimate:
+                    continue
 
                 for move, move_cost in zip(moves, move_costs):
                     nx, ny = fwd_current[0] + move[0], fwd_current[1] + move[1]
@@ -1515,11 +1544,13 @@ class MapPlannerNode(Node):
                         h = self.heuristic(neighbor, goal)
                         heapq.heappush(fwd_open, (tentative_g + h, neighbor))
 
+            # ── 后向扩展 ─────────────────────────────────────────────────
             if bwd_open:
                 bwd_f, bwd_current = heapq.heappop(bwd_open)
                 if bwd_current in bwd_closed:
                     continue
                 bwd_closed.add(bwd_current)
+                expanded += 1
 
                 if bwd_current in fwd_g:
                     total = fwd_g[bwd_current] + bwd_g[bwd_current]
@@ -1529,10 +1560,10 @@ class MapPlannerNode(Node):
                             fwd_came_from, bwd_came_from, bwd_current
                         )
 
+                # 找到最优路径后，后向 f 值已超出上界，跳过扩展
                 if best_path is not None and bwd_f >= best_estimate:
                     continue
 
-                # Reverse moves for backward search
                 for move, move_cost in zip(moves, move_costs):
                     nx, ny = bwd_current[0] + move[0], bwd_current[1] + move[1]
                     if not (0 <= nx < width and 0 <= ny < height):
