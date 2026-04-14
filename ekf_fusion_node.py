@@ -205,8 +205,8 @@ class EKFFusionNode(Node):
         self.map_pose_pub = self.create_publisher(PoseStamped, self.map_pose_topic, 1)
         self.gps_pose_pub = self.create_publisher(PoseStamped, self.gps_map_pose_topic, 1)
 
-        # 静态 TF 广播器
-        self.tf_broadcaster = StaticTransformBroadcaster(self)
+        # 动态 TF 广播器（用于 map->odom，随融合结果实时更新）
+        self.tf_broadcaster = TransformBroadcaster(self)
 
         # 动态 TF 广播器（用于 odom->base_link）
         self.dynamic_tf_broadcaster = TransformBroadcaster(self)
@@ -843,11 +843,12 @@ class EKFFusionNode(Node):
         # 计算增量（两个 map 坐标系位置的差）
         delta_x = current_odom_in_map_x - self.odom_in_map_snapshot_x
         delta_y = current_odom_in_map_y - self.odom_in_map_snapshot_y
-        # map_x = self.gps_map_x + delta_x
-        # map_y = self.gps_map_y + delta_y
-        #纯里程计测试
-        map_x = current_odom_in_map_x
-        map_y = current_odom_in_map_y
+        # GPS anchor + odom 增量：以最新 GPS 位置为锚点，叠加 odom 的相对位移
+        map_x = self.gps_map_x + delta_x
+        map_y = self.gps_map_y + delta_y
+        # #纯里程计测试
+        # map_x = current_odom_in_map_x
+        # map_y = current_odom_in_map_y
         fusion_components.append('POS_DR')
 
         # 发布 GPS 原始位姿（用于可视化对比）
@@ -870,6 +871,27 @@ class EKFFusionNode(Node):
         fusion_mode = '+'.join(fusion_components) if fusion_components else 'INVALID'
 
         self.publish_fusion_result(map_x, map_y, yaw)
+
+        # 每次融合后重新计算并广播 map->odom，使 TF 树与融合结果保持同步
+        # map->odom: T = map_pose - R(yaw_offset) * odom_pose
+        yaw_offset = normalize_angle(yaw - odom_pose_yaw)
+        cos_off = math.cos(yaw_offset)
+        sin_off = math.sin(yaw_offset)
+        tx = map_x - (cos_off * odom_pose_x - sin_off * odom_pose_y)
+        ty = map_y - (sin_off * odom_pose_x + cos_off * odom_pose_y)
+
+        t_map_odom = TransformStamped()
+        t_map_odom.header.stamp = TimeUtils.nanos_to_stamp(current_nanos)
+        t_map_odom.header.frame_id = 'map'
+        t_map_odom.child_frame_id = 'odom'
+        t_map_odom.transform.translation.x = tx
+        t_map_odom.transform.translation.y = ty
+        t_map_odom.transform.translation.z = 0.0
+        t_map_odom.transform.rotation.x = 0.0
+        t_map_odom.transform.rotation.y = 0.0
+        t_map_odom.transform.rotation.z = math.sin(yaw_offset / 2.0)
+        t_map_odom.transform.rotation.w = math.cos(yaw_offset / 2.0)
+        self.tf_broadcaster.sendTransform(t_map_odom)
 
         self.logger.debug(
             f'Fusion | {fusion_mode} | '
