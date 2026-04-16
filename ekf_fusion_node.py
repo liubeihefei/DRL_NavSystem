@@ -205,6 +205,9 @@ class EKFFusionNode(Node):
         self.map_pose_pub = self.create_publisher(PoseStamped, self.map_pose_topic, 1)
         self.gps_pose_pub = self.create_publisher(PoseStamped, self.gps_map_pose_topic, 1)
 
+        # 静态 TF 广播器（仅用于 utm->map，发布一次后持续有效）
+        self.static_tf_broadcaster = StaticTransformBroadcaster(self)
+
         # 动态 TF 广播器（用于 map->odom，随融合结果实时更新）
         self.tf_broadcaster = TransformBroadcaster(self)
 
@@ -460,7 +463,7 @@ class EKFFusionNode(Node):
         t.transform.rotation.z = 0.0
         t.transform.rotation.w = 1.0
 
-        self.tf_broadcaster.sendTransform(t)
+        self.static_tf_broadcaster.sendTransform(t)
 
         self.utm_to_map_published = True
 
