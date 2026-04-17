@@ -629,6 +629,7 @@ class MapPlannerNode(Node):
         if not success:
             self.logger.warning('Failed to generate map from new GPS path')
 
+    # 局部地图订阅回调，使用局部地图更新全局/膨胀地图，并发布更新后的地图
     def local_costmap_callback(self, msg: OccupancyGrid):
         callback_start_nanos = TimeUtils.now_nanos()
         
@@ -1047,27 +1048,28 @@ class MapPlannerNode(Node):
 
         height, width = local_costmap.shape
 
-        # 只处理已知格子（0 或 100），跳过 -1（未知）
+        # 获取可通行区域和障碍物区域的掩码
         known_mask = (local_costmap == 0) | (local_costmap == 100)
         if not np.any(known_mask):
             return (False, None)
 
+        # 获取局部地图每个格子（分辨率大小）中心的本地坐标
         local_x, local_y = self.get_local_grid_centers(
             height, width, local_resolution, origin_x, origin_y
         )
 
+        # 获取非未知格的值和坐标
         vals = local_costmap[known_mask].astype(np.int8)
         lx = local_x[known_mask]
         ly = local_y[known_mask]
 
+        # base_link -> map 坐标变换
         cos_yaw = math.cos(robot_yaw)
         sin_yaw = math.sin(robot_yaw)
-
-        # base_link -> map 坐标变换
         wx = robot_x + cos_yaw * lx - sin_yaw * ly
         wy = robot_y + sin_yaw * lx + cos_yaw * ly
 
-        # 栅格化
+        # 将坐标栅格化（对齐局部地图和全局地图的分辨率）
         gx = np.floor((wx - metadata.origin_x) / metadata.resolution).astype(np.int32)
         gy = np.floor((wy - metadata.origin_y) / metadata.resolution).astype(np.int32)
 
@@ -1091,8 +1093,10 @@ class MapPlannerNode(Node):
         #     * 否则写 0
         # - 然后把归并结果直接覆盖到全局地图，不与旧值取 max
 
+        # 展平成一维
         flat_idx = gy.astype(np.int64) * metadata.width + gx.astype(np.int64)
 
+        # 拿到0和100对应的全局格索引
         unique_flat, inverse = np.unique(flat_idx, return_inverse=True)
 
         # 本次更新里，同一目标格是否命中过障碍
@@ -1109,7 +1113,6 @@ class MapPlannerNode(Node):
 
         # 直接覆盖写回
         self.map_data[merged_gy, merged_gx] = merged_vals
-
 
         min_col = int(gx.min())
         max_col = int(gx.max())
@@ -1154,7 +1157,9 @@ class MapPlannerNode(Node):
         # 使用累积和算法实现高效的矩形区域膨胀
         # 原理：对每个障碍物点，用差分数组标记其膨胀区域，
         # 然后通过两次累加（水平和垂直）得到最终掩码
-        diff = np.zeros((h + 2, w + 2), dtype=np.int8)
+        # diff = np.zeros((h + 2, w + 2), dtype=np.int8)
+        # 改成int32，防止可能的溢出（暂不知道是否是此处造成的大面积障碍物bug）
+        diff = np.zeros((h + 2, w + 2), dtype=np.int32)
 
         # 获取障碍物坐标
         obstacle_coords = np.argwhere(obstacle_mask)
