@@ -190,6 +190,11 @@ class ControllerNode(Node):
         self.max_v = controller_config.get('max_v', 1.0)  # 最大线速度 m/s
         self.max_w = controller_config.get('max_w', 1.0)  # 最大角速度 rad/s
 
+        # 人工保底参数
+        self.safety_mode = int(controller_config.get('safety_mode', 0))
+        self.safety_distance = float(controller_config.get('safety_distance', 0.5))
+        self.safety_w = float(controller_config.get('safety_w', 0.5))
+
         # 创建订阅者 - 路径
         self.path_sub = self.create_subscription(
             Path,
@@ -270,6 +275,7 @@ class ControllerNode(Node):
             f'  发布控制命令: {self.cmd_pub.topic}',
             f'  工作频率: {self.frequency} Hz',
             f'  最大速度: {self.max_v} m/s, 最大角速度: {self.max_w} rad/s',
+            f'  安全模式: {self.safety_mode} | 距离阈值: {self.safety_distance} m | 保底角速度: {self.safety_w} rad/s',
             f'  详细日志已写入: {self.node_logger.log_file}',
         ]
 
@@ -464,6 +470,43 @@ class ControllerNode(Node):
         cmd_w = model_w * self.max_w
         return cmd_v, cmd_w
 
+    def _apply_safety_override(self, cmd_v: float, cmd_w: float) -> tuple:
+        """
+        人工保底：根据 safety_mode 和实时雷达数据决定是否覆盖模型输出。
+
+        safety_mode=0: 直接返回模型输出，不干预。
+        safety_mode=1: 若任意雷达测距 < safety_distance，线速度置0，保留模型角速度。
+        safety_mode=2: 若任意雷达测距 < safety_distance，线速度置0，角速度固定为 safety_w。
+
+        使用 self.latest_obs（原始雷达数据）做判断，与模型使用的状态向量无关，
+        避免雷达超时时 compute_state 用全1填充导致安全检查失效。
+        若 latest_obs 尚未收到（None），不触发保底。
+        """
+        if self.safety_mode == 0:
+            return cmd_v, cmd_w
+
+        with self.obs_lock:
+            obs = self.latest_obs
+
+        if obs is None:
+            return cmd_v, cmd_w
+
+        if np.any(obs < self.safety_distance):
+            if self.safety_mode == 1:
+                self.logger.warning(
+                    f'Safety override mode=1: min_obs={obs.min():.3f} < {self.safety_distance}, '
+                    f'cmd_v=0.0 (was {cmd_v:.3f}), cmd_w={cmd_w:.3f} (kept)'
+                )
+                return 0.0, cmd_w
+            elif self.safety_mode == 2:
+                self.logger.warning(
+                    f'Safety override mode=2: min_obs={obs.min():.3f} < {self.safety_distance}, '
+                    f'cmd_v=0.0 (was {cmd_v:.3f}), cmd_w={self.safety_w:.3f} (fixed)'
+                )
+                return 0.0, self.safety_w
+
+        return cmd_v, cmd_w
+
     def publish_cmd(self, cmd_v: float, cmd_w: float):
         """发布控制指令"""
         # msg = Float64MultiArray()
@@ -532,6 +575,7 @@ class ControllerNode(Node):
             return
 
         cmd_v, cmd_w = self.map_output(model_v, model_w)
+        cmd_v, cmd_w = self._apply_safety_override(cmd_v, cmd_w)
         self.publish_cmd(cmd_v, cmd_w)
 
 

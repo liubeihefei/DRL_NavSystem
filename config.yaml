@@ -176,6 +176,14 @@ controller_node:
   max_v: 1.0                             # 最大线速度 (m/s)
   max_w: 1.0                             # 最大角速度 (rad/s)
 
+  # 人工保底安全模式
+  # 0 = 完全听从模型输出
+  # 1 = 若雷达感知数据中有低于 safety_distance 的，线速度置0，保留模型角速度
+  # 2 = 若雷达感知数据中有低于 safety_distance 的，线速度置0，角速度固定为 safety_w
+  safety_mode: 0
+  safety_distance: 0.5                   # 触发保底的距离阈值 (米)
+  safety_w: 0.5                          # 模式2下的固定角速度 (rad/s)
+
   # 工作频率 (Hz)
   frequency: 10.0
 
