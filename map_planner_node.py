@@ -1053,7 +1053,7 @@ class MapPlannerNode(Node):
         if not np.any(known_mask):
             return (False, None)
 
-        # 获取局部地图每个格子（分辨率大小）中心的本地坐标
+        # 获取局部地图每个格子（分辨率大小）中心的局部地图坐标
         local_x, local_y = self.get_local_grid_centers(
             height, width, local_resolution, origin_x, origin_y
         )
@@ -1176,11 +1176,18 @@ class MapPlannerNode(Node):
         y0_all = np.maximum(0, oy_all - r)
         y1_all = np.minimum(h - 1, oy_all + r)
 
-        # 向量化更新差分数组的四个角
-        diff[y0_all + 1, x0_all + 1] += 1
-        diff[y0_all + 1, x1_all + 2] -= 1
-        diff[y1_all + 2, x0_all + 1] -= 1
-        diff[y1_all + 2, x1_all + 2] += 1
+        # # 向量化更新差分数组的四个角
+        # diff[y0_all + 1, x0_all + 1] += 1
+        # diff[y0_all + 1, x1_all + 2] -= 1
+        # diff[y1_all + 2, x0_all + 1] -= 1
+        # diff[y1_all + 2, x1_all + 2] += 1
+
+        # opus4.7提到array的自增运算有bug（unbuffered），可能导致二维前缀和缺少停止标签，
+        # 进而导致膨胀区域泄露，这里换成慢一点但无bug的运算，看能否解决大面积障碍物bug
+        np.add.at(diff, (y0_all + 1, x0_all + 1),  1)
+        np.add.at(diff, (y0_all + 1, x1_all + 2), -1)
+        np.add.at(diff, (y1_all + 2, x0_all + 1), -1)
+        np.add.at(diff, (y1_all + 2, x1_all + 2),  1)
 
         # 水平方向累加
         cumsum_h = np.cumsum(diff, axis=1)
