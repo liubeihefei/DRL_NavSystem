@@ -572,14 +572,14 @@ class MapPlannerNode(Node):
 
     def gps_path_callback(self, msg: String):
         """
-        接收下发的导航 GPS 点
+        接收下发的导航控制指令
 
         格式：
         {
-            "action": 1,
+            "action": 1,                # 1=开始任务，0=停止任务
             "mode": 1,
             "batchId": "batch_xxx",
-            "points": [
+            "points": [                 # action=1 时必填；action=0 时不带
                 {"latitude": lat1, "longitude": lon1},
                 ...
             ]
@@ -589,6 +589,26 @@ class MapPlannerNode(Node):
             data = json.loads(msg.data)
         except Exception as e:
             self.logger.error(f'Failed to parse GPS path message: {e}')
+            return
+
+        # action=0：anav web 端下发的"停止出行任务"。
+        # 清空当前导航状态并立即下发空路径，触发 controller_node 进入零速停车。
+        action = data.get('action', 1)
+        if action == 0:
+            recv_batch_id = data.get('batchId', '')
+            self.logger.info(
+                f'Received stop request: batchId={recv_batch_id} '
+                f'(current batchId={self.batch_id}); clearing nav state'
+            )
+            # 清空航点状态。这样 _planning_timer_callback 会因 nav_map_points
+            # 为空而提前 return，不会再继续规划老路线。
+            self.nav_gps_points = []
+            self.nav_map_points = []
+            self.unreached_index = 0
+            self.batch_id = ''
+            # 立刻向 controller_node 发空路径：path_callback 收到空路径会把
+            # stop_requested_by_empty_path 置 True，update() 随即开始持续发零速度。
+            self.publish_empty_path()
             return
 
         points = data.get('points', [])
