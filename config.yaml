@@ -18,6 +18,9 @@ ekf_fusion_node:
   publications:
     map_pose_topic: /navigation/map_pose  # 地图坐标系定位,frame_id=map
     gps_map_pose_topic: /navigation/gps_map_pose  # GPS原始位姿（用于可视化对比）,frame_id=map
+    # 与 map_pose 同一份位姿，但用 Odometry 类型发布，
+    # 供 RViz2 的 Odometry 显示插件（Keep N 帧）累积历史轨迹可视化
+    map_odom_topic: /navigation/map_odom
     # map_origin_gps 不再发布（通过 TF 变换可知）
 
   # 当前时间 - 最后一次收到该传感器数据的时间 > 超时阈值 则认为该传感器数据丢失

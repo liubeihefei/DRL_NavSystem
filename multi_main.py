@@ -189,9 +189,12 @@ class ProcessManager:
 
         # 创建统一日志目录
         project_root = get_project_root()
+        # 用时间戳命名此次日志的存放目录
         self.log_dir: str = os.path.join(project_root, 'logs', f'navigation_{self.start_timestamp}')
+        # 确保目录存在
         ensure_log_dir(self.log_dir)
 
+        # 生成当前多进程启动脚本的日志存放文件路径
         self.log_file: str = os.path.join(self.log_dir, f'multiprocess_main_{self.start_timestamp}.log')
 
     def _start_log_worker(self) -> None:

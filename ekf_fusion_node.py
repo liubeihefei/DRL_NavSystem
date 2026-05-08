@@ -135,6 +135,10 @@ class EKFFusionNode(Node):
         # 发布话题
         self.map_pose_topic = publications.get('map_pose_topic', '/navigation/map_pose')
         self.gps_map_pose_topic = publications.get('gps_pose_topic', '/navigation/gps_pose')
+        # 与 map_pose 同一份位姿，但用 Odometry 类型发布。
+        # PoseStamped 在 RViz2 里只能显示当前一帧，无法累积历史；
+        # Odometry 支持 Keep N 帧来可视化历史轨迹。
+        self.map_odom_topic = publications.get('map_odom_topic', '/navigation/map_odom')
 
         # 运行参数
         self.frequency = ekf_config.get('frequency', 10.0)
@@ -204,6 +208,8 @@ class EKFFusionNode(Node):
 
         self.map_pose_pub = self.create_publisher(PoseStamped, self.map_pose_topic, 1)
         self.gps_pose_pub = self.create_publisher(PoseStamped, self.gps_map_pose_topic, 1)
+        # Odometry 版本：用于 RViz2 累积历史轨迹可视化
+        self.map_odom_pub = self.create_publisher(Odometry, self.map_odom_topic, 1)
 
         # 静态 TF 广播器（仅用于 utm->map，发布一次后持续有效）
         self.static_tf_broadcaster = StaticTransformBroadcaster(self)
@@ -905,7 +911,7 @@ class EKFFusionNode(Node):
         self._log_frequency_stats()
 
     def publish_fusion_result(self, map_x: float, map_y: float, yaw: float):
-        """发布 map 位姿"""
+        """发布 map 位姿（同时发布 PoseStamped 与 Odometry 两份）"""
         # map_pose 发布需要 map_origin_set
         if not self.map_origin_set:
             return
@@ -913,6 +919,14 @@ class EKFFusionNode(Node):
         # 使用当前时间作为时间戳
         pose_stamp = TimeUtils.nanos_to_stamp(TimeUtils.now_nanos())
 
+        # 共享的位置 / 朝向
+        q = Quaternion()
+        q.x = 0.0
+        q.y = 0.0
+        q.z = math.sin(yaw / 2.0)
+        q.w = math.cos(yaw / 2.0)
+
+        # ---- 1. PoseStamped（保留原有用法，下游 controller_node 等仍订阅这个）----
         pose_msg = PoseStamped()
         pose_msg.header.stamp = pose_stamp
         pose_msg.header.frame_id = 'map'
@@ -920,15 +934,32 @@ class EKFFusionNode(Node):
         pose_msg.pose.position.x = map_x
         pose_msg.pose.position.y = map_y
         pose_msg.pose.position.z = 0.0
-
-        q = Quaternion()
-        q.x = 0.0
-        q.y = 0.0
-        q.z = math.sin(yaw / 2.0)
-        q.w = math.cos(yaw / 2.0)
         pose_msg.pose.orientation = q
 
         self.map_pose_pub.publish(pose_msg)
+
+        # ---- 2. Odometry（专供 RViz2 累积历史轨迹可视化）----
+        # 父坐标系 map，子坐标系 base_link。pose 与上面 PoseStamped 完全一致；
+        # twist 直接用最新 odom 的速度（按 ROS 约定 twist 在 child_frame_id 下，
+        # 即 base_link 自身坐标系，与原始 odom_topic.twist 同义，无需再转换）。
+        odom_msg = Odometry()
+        odom_msg.header.stamp = pose_stamp
+        odom_msg.header.frame_id = 'map'
+        odom_msg.child_frame_id = 'base_link'
+
+        odom_msg.pose.pose.position.x = map_x
+        odom_msg.pose.pose.position.y = map_y
+        odom_msg.pose.pose.position.z = 0.0
+        odom_msg.pose.pose.orientation = q
+
+        odom_msg.twist.twist.linear.x = float(self.latest_sensor_data.odom_vx)
+        odom_msg.twist.twist.linear.y = float(self.latest_sensor_data.odom_vy)
+        odom_msg.twist.twist.linear.z = 0.0
+        odom_msg.twist.twist.angular.x = 0.0
+        odom_msg.twist.twist.angular.y = 0.0
+        odom_msg.twist.twist.angular.z = float(self.latest_sensor_data.odom_vyaw)
+
+        self.map_odom_pub.publish(odom_msg)
 
     def _publish_gps_pose(self, gps_x: float, gps_y: float, gps_yaw: float):
         """发布 GPS 原始位姿（用于可视化对比）"""
